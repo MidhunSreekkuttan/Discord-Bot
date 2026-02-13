@@ -3,6 +3,6 @@
 node deploy-commands.js
 
 echo Starting bot...
-npm start
+node index.js
 
 pause
