@@ -1,15 +1,21 @@
-require("dotenv").config(); // Load .env at the very top
+require("dotenv").config(); // Load .env first
 
 const { Client, GatewayIntentBits, Collection } = require("discord.js");
-const { Player } = require("discord-player");
-const { DefaultExtractors } = require("@discord-player/extractor");
 const fs = require("fs");
 const path = require("path");
 
 // Create client
 const client = new Client({
-  intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildVoiceStates],
+  intents: [
+    GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildVoiceStates,
+    GatewayIntentBits.GuildMembers, // Needed for welcome messages
+  ],
 });
+
+// Event: welcome message
+const guildMemberAddEvent = require("./events/guildMemberAdd");
+client.on("guildMemberAdd", guildMemberAddEvent);
 
 // Collection for commands
 client.commands = new Collection();
@@ -23,7 +29,7 @@ function loadCommands(dir) {
     const stat = fs.statSync(fullPath);
 
     if (stat.isDirectory()) {
-      loadCommands(fullPath); // recursive for subfolders
+      loadCommands(fullPath);
     } else if (file.endsWith(".js")) {
       const command = require(fullPath);
       if (command.data && command.execute) {
@@ -36,20 +42,11 @@ function loadCommands(dir) {
   }
 }
 
-// Load all commands from "commands" folder
+// Load all commands
 const commandsPath = path.join(__dirname, "commands");
 loadCommands(commandsPath);
 
-// Initialize Discord Player
-client.player = new Player(client);
-
-// Load default extractors once
-(async () => {
-  await client.player.extractors.loadMulti(DefaultExtractors);
-  console.log("🎵 Default extractors loaded!");
-})();
-
-// Bot ready event
+// Ready event
 client.once("clientReady", () => {
   console.log(`✅ Logged in as ${client.user.tag}!`);
 });
@@ -65,7 +62,6 @@ client.on("interactionCreate", async (interaction) => {
     await command.execute(interaction, client);
   } catch (err) {
     console.error(`Error executing ${interaction.commandName}:`, err);
-
     if (!interaction.replied) {
       await interaction.reply({
         content: "❌ Error executing command.",
@@ -77,5 +73,5 @@ client.on("interactionCreate", async (interaction) => {
   }
 });
 
-// Login using token from .env
+// Login
 client.login(process.env.TOKEN);
