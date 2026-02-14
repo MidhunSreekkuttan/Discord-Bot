@@ -1,55 +1,81 @@
-import "dotenv/config";
-import fs from "fs";
-import path from "path";
-import { fileURLToPath } from "url";
-import { Client, Collection, GatewayIntentBits } from "discord.js";
+require("dotenv").config(); // Load .env at the very top
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+const { Client, GatewayIntentBits, Collection } = require("discord.js");
+const { Player } = require("discord-player");
+const { DefaultExtractors } = require("@discord-player/extractor");
+const fs = require("fs");
+const path = require("path");
 
+// Create client
 const client = new Client({
-  intents: [
-    GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildMembers,
-    GatewayIntentBits.GuildMessages,
-  ],
+  intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildVoiceStates],
 });
 
+// Collection for commands
 client.commands = new Collection();
 
-// Load Commands
+// Recursive command loader
+function loadCommands(dir) {
+  const files = fs.readdirSync(dir);
+
+  for (const file of files) {
+    const fullPath = path.join(dir, file);
+    const stat = fs.statSync(fullPath);
+
+    if (stat.isDirectory()) {
+      loadCommands(fullPath); // recursive for subfolders
+    } else if (file.endsWith(".js")) {
+      const command = require(fullPath);
+      if (command.data && command.execute) {
+        client.commands.set(command.data.name, command);
+        console.log(`✅ Loaded command: ${command.data.name}`);
+      } else {
+        console.warn(`⚠️ Skipped invalid command file: ${fullPath}`);
+      }
+    }
+  }
+}
+
+// Load all commands from "commands" folder
 const commandsPath = path.join(__dirname, "commands");
-const commandFiles = fs
-  .readdirSync(commandsPath)
-  .filter((file) => file.endsWith(".js"));
+loadCommands(commandsPath);
 
-for (const file of commandFiles) {
-  const command = await import(`./commands/${file}`);
-  const cmd = command.default ?? command;
+// Initialize Discord Player
+client.player = new Player(client);
 
-  if (!cmd.data) {
-    console.error(`❌ ${file} is missing data export`);
-    continue;
+// Load default extractors once
+(async () => {
+  await client.player.extractors.loadMulti(DefaultExtractors);
+  console.log("🎵 Default extractors loaded!");
+})();
+
+// Bot ready event
+client.once("clientReady", () => {
+  console.log(`✅ Logged in as ${client.user.tag}!`);
+});
+
+// Slash command handler
+client.on("interactionCreate", async (interaction) => {
+  if (!interaction.isCommand()) return;
+
+  const command = client.commands.get(interaction.commandName);
+  if (!command) return;
+
+  try {
+    await command.execute(interaction, client);
+  } catch (err) {
+    console.error(`Error executing ${interaction.commandName}:`, err);
+
+    if (!interaction.replied) {
+      await interaction.reply({
+        content: "❌ Error executing command.",
+        ephemeral: true,
+      });
+    } else {
+      await interaction.editReply({ content: "❌ Error executing command." });
+    }
   }
+});
 
-  client.commands.set(cmd.data.name, cmd);
-}
-
-// Load Events
-const eventsPath = path.join(__dirname, "events");
-const eventFiles = fs
-  .readdirSync(eventsPath)
-  .filter((file) => file.endsWith(".js"));
-
-for (const file of eventFiles) {
-  const event = await import(`./events/${file}`);
-  if (event.default.once) {
-    client.once(event.default.name, (...args) =>
-      event.default.execute(...args),
-    );
-  } else {
-    client.on(event.default.name, (...args) => event.default.execute(...args));
-  }
-}
-
+// Login using token from .env
 client.login(process.env.TOKEN);
