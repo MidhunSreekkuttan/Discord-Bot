@@ -1,29 +1,31 @@
 {
-  "name": "discordbot",
+  "name": "dc",
   "version": "1.0.0",
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "nodemon index.js"
-  },
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/MidhunSreekkuttan/Discord-Bot.git"
+    "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "type": "commonjs",
-  "bugs": {
-    "url": "https://github.com/MidhunSreekkuttan/Discord-Bot/issues"
-  },
-  "homepage": "https://github.com/MidhunSreekkuttan/Discord-Bot#readme",
   "dependencies": {
-    "@discordjs/builders": "^1.13.1",
-    "@discordjs/rest": "^2.6.0",
+    "@discord-player/extractor": "^7.1.0",
+    "@discordjs/voice": "^0.19.0",
+    "@distube/ytdl-core": "^4.16.12",
+    "discord-player": "^7.1.0",
+    "discord-player-youtubei": "^1.5.0",
     "discord.js": "^14.25.1",
     "dotenv": "^17.3.1",
-    "nodemon": "^3.1.11"
+    "ffmpeg-static": "^5.3.0",
+    "libsodium-wrappers": "^0.8.2",
+    "play-dl": "^1.9.7",
+    "youtubei.js": "^16.0.1",
+    "yt-dlp-wrap": "^2.3.12",
+    "yt-search": "^2.13.1"
+  },
+  "overrides": {
+    "youtubei.js": "$youtubei.js"
   }
 }

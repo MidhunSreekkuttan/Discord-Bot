@@ -1,39 +1,26 @@
-const { SlashCommandBuilder, PermissionFlagsBits } = require("discord.js");
+const { SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
 
 module.exports = {
-  data: new SlashCommandBuilder()
-    .setName("clear")
-    .setDescription("Clear a number of messages from this channel")
-    .addIntegerOption((opt) =>
-      opt
-        .setName("amount")
-        .setDescription("Number of messages to delete (max 100)")
-        .setRequired(true),
-    )
-    .setDefaultMemberPermissions(PermissionFlagsBits.ManageMessages),
+    data: new SlashCommandBuilder()
+        .setName('clear')
+        .setDescription('Prune up to 99 messages.')
+        .addIntegerOption(option =>
+            option
+                .setName('amount')
+                .setDescription('Number of messages to prune')
+                .setMinValue(1)
+                .setMaxValue(99)
+                .setRequired(true))
+        .setDefaultMemberPermissions(PermissionFlagsBits.ManageMessages)
+        .setDMPermission(false),
+    async execute(interaction) {
+        const amount = interaction.options.getInteger('amount');
 
-  async execute(interaction) {
-    const amount = interaction.options.getInteger("amount");
+        await interaction.channel.bulkDelete(amount, true).catch(error => {
+            console.error(error);
+            interaction.reply({ content: 'There was an error trying to prune messages in this channel!', ephemeral: true });
+        });
 
-    if (amount < 1 || amount > 100) {
-      return interaction.reply({
-        content: "You can only delete between 1 and 100 messages.",
-        ephemeral: true,
-      });
-    }
-
-    try {
-      const deleted = await interaction.channel.bulkDelete(amount, true);
-      interaction.reply({
-        content: `🧹 Cleared ${deleted.size} messages!`,
-        ephemeral: true,
-      });
-    } catch (err) {
-      console.error(err);
-      interaction.reply({
-        content: "I could not delete messages.",
-        ephemeral: true,
-      });
-    }
-  },
+        return interaction.reply({ content: `Successfully pruned \`${amount}\` messages.`, ephemeral: true });
+    },
 };

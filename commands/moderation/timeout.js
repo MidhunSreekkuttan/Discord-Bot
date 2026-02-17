@@ -1,41 +1,36 @@
-const { SlashCommandBuilder, PermissionFlagsBits } = require("discord.js");
+const { SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
 
 module.exports = {
-  data: new SlashCommandBuilder()
-    .setName("timeout")
-    .setDescription("Timeout a user for a specific duration (minutes)")
-    .addUserOption((option) =>
-      option
-        .setName("target")
-        .setDescription("User to timeout")
-        .setRequired(true),
-    )
-    .addIntegerOption((option) =>
-      option
-        .setName("minutes")
-        .setDescription("Duration in minutes")
-        .setRequired(true),
-    )
-    .setDefaultMemberPermissions(PermissionFlagsBits.ModerateMembers),
+    data: new SlashCommandBuilder()
+        .setName('timeout')
+        .setDescription('Timeout a member.')
+        .addUserOption(option =>
+            option
+                .setName('target')
+                .setDescription('The member to timeout')
+                .setRequired(true))
+        .addIntegerOption(option =>
+            option
+                .setName('duration')
+                .setDescription('Duration in minutes')
+                .setRequired(true))
+        .addStringOption(option =>
+            option
+                .setName('reason')
+                .setDescription('The reason for timeout'))
+        .setDefaultMemberPermissions(PermissionFlagsBits.ModerateMembers)
+        .setDMPermission(false),
+    async execute(interaction) {
+        const target = interaction.options.getUser('target');
+        const duration = interaction.options.getInteger('duration');
+        const reason = interaction.options.getString('reason') ?? 'No reason provided';
+        const member = await interaction.guild.members.fetch(target.id);
 
-  async execute(interaction) {
-    const user = interaction.options.getUser("target");
-    const minutes = interaction.options.getInteger("minutes");
-    const member = interaction.guild.members.cache.get(user.id);
+        if (!member.moderatable) {
+            return interaction.reply({ content: 'I cannot timeout this user!', ephemeral: true });
+        }
 
-    if (!member)
-      return interaction.reply({ content: "User not found!", ephemeral: true });
-
-    try {
-      await member.timeout(minutes * 60 * 1000);
-      interaction.reply({
-        content: `${user.tag} has been timed out for ${minutes} minute(s).`,
-      });
-    } catch {
-      interaction.reply({
-        content: "Cannot timeout this user.",
-        ephemeral: true,
-      });
-    }
-  },
+        await member.timeout(duration * 60 * 1000, reason);
+        await interaction.reply(`Timed out ${target.username} for ${duration} minutes. Reason: ${reason}`);
+    },
 };
