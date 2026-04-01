@@ -1,14 +1,36 @@
 const fs = require('node:fs');
 const path = require('node:path');
+const dns = require('node:dns');
 const { Client, Collection, Events, GatewayIntentBits } = require('discord.js');
 const { Player } = require('discord-player');
 require('dotenv').config();
+
+dns.setServers(['1.1.1.1', '8.8.8.8']);
+
+process.on('unhandledRejection', (err) => {
+	console.error('Unhandled promise rejection:', err);
+});
+
+process.on('uncaughtException', (err) => {
+	console.error('Uncaught exception:', err);
+});
 
 const client = new Client({
 	intents: [
 		GatewayIntentBits.Guilds,
 		GatewayIntentBits.GuildVoiceStates
-	]
+	],
+	ws: {
+		handshakeTimeout: 30000
+	}
+});
+
+process.on('unhandledRejection', err => {
+	console.error('Unhandled Rejection:', err);
+});
+
+process.on('uncaughtException', err => {
+	console.error('Uncaught Exception:', err);
 });
 
 client.commands = new Collection();
@@ -17,26 +39,22 @@ const commandFolders = fs.readdirSync(foldersPath);
 
 const { DefaultExtractors } = require('@discord-player/extractor');
 const { YoutubeiExtractor } = require('discord-player-youtubei');
-const play = require('play-dl');
 
 // Initialize Player
 const player = new Player(client);
 
 // Ensure yt-dlp is available
 const YTDlpWrap = require('yt-dlp-wrap').default;
-const ytDlpPath = path.join(__dirname, 'yt-dlp.exe'); // Windows binary
-const ytDlp = new YTDlpWrap(ytDlpPath);
+const ytDlpPath = path.join(__dirname, 'yt-dlp.exe');
 
-(async () => {
-	// Check if binary exists, if not download it
+async function ensureYtDlp() {
 	if (!fs.existsSync(ytDlpPath)) {
 		console.log('Downloading yt-dlp binary... this may take a moment.');
 		await YTDlpWrap.downloadFromGithub(ytDlpPath);
 		console.log('yt-dlp downloaded successfully!');
 	}
-})();
+}
 
-// Override stream creation to use play-dl
 player.events.on('playerError', (queue, error) => {
 	console.log(`[Player Error] ${error.message}`);
 	console.log(error);
@@ -48,34 +66,57 @@ player.events.on('error', (queue, error) => {
 });
 
 (async () => {
-	await player.extractors.loadMulti(DefaultExtractors);
+	try {
+		await ensureYtDlp();
 
-	// Check if we need to register it. Explicitly registering to ensure we handle YouTube links.
-	// We use 'IOS' client as it is generally more stable for metadata.
-	await player.extractors.register(YoutubeiExtractor, {
-		streamOptions: {
-			useClient: 'IOS'
-		}
-	});
+		dns.lookup('gateway.discord.gg', (err, address, family) => {
+			if (err) {
+				console.error('DNS lookup failed for gateway.discord.gg:', err);
+			} else {
+				console.log(`gateway.discord.gg resolved to ${address} (IPv${family})`);
+			}
+		});
 
-	console.log('Extractors loaded successfully');
-	// This is the key fix: Intercept stream creation and use play-dl
-	player.on('active', (queue) => {
-		// Optional: Log active queue
-	});
+		await player.extractors.loadMulti(DefaultExtractors);
 
-	// Hook into stream creation to use play-dl
-	const { stream } = require('play-dl');
-	player.events.on('playerStart', (queue, track) => {
-		console.log(`Started playing: ${track.title}`);
-	});
+		await player.extractors.register(YoutubeiExtractor, {
+			streamOptions: {
+				useClient: 'IOS'
+			}
+		});
 
-	// Using the player's internal hook to override stream generation
-	// Note: In discord-player v6/v7 usually we register an extractor. 
-	// But since we want to force play-dl, we can define a custom extractor or just use this global hook if available.
-	// However, the cleanest way in v7 without a custom class is hard.
-	client.login(process.env.DISCORD_TOKEN);
+		console.log('Extractors loaded successfully');
+
+		player.events.on('playerStart', (queue, track) => {
+			console.log(`Started playing: ${track.title}`);
+		});
+
+		await loginWithRetry();
+	} catch (err) {
+		console.error('Startup/login failed:', err);
+	}
 })();
+
+async function loginWithRetry(retries = 5) {
+	for (let i = 1; i <= retries; i++) {
+		try {
+			console.log(`Login attempt ${i}/${retries}...`);
+			await client.login(process.env.DISCORD_TOKEN);
+			console.log('Discord login successful');
+			return;
+		} catch (err) {
+			console.error(`Login attempt ${i} failed:`, err.message);
+
+			if (i === retries) {
+				throw err;
+			}
+
+			await new Promise(resolve => setTimeout(resolve, 5000));
+		}
+	}
+}
+
+console.log('Token exists:', !!process.env.DISCORD_TOKEN);
 
 for (const folder of commandFolders) {
 	const commandsPath = path.join(foldersPath, folder);
@@ -94,7 +135,6 @@ for (const folder of commandFolders) {
 client.once(Events.ClientReady, async c => {
 	console.log(`Ready! Logged in as ${c.user.tag}`);
 
-	// Auto-join logic
 	const autoJoinId = process.env.AUTO_JOIN_CHANNEL_ID;
 	if (autoJoinId) {
 		try {
@@ -102,6 +142,7 @@ client.once(Events.ClientReady, async c => {
 			if (channel && channel.isVoiceBased()) {
 				console.log(`Auto-joining channel: ${channel.name}`);
 				const { streamHandler } = require('./utils/stream-loader');
+
 				const queue = player.nodes.create(channel.guild, {
 					metadata: {
 						channel: channel
@@ -142,15 +183,24 @@ client.on(Events.InteractionCreate, async interaction => {
 	try {
 		await command.execute(interaction);
 	} catch (error) {
-		console.error(error);
-		console.error(error);
-		// Check if interaction was already replied or deferred
-		if (interaction.replied || interaction.deferred) {
-			// If already replied/deferred, use followUp
-			await interaction.followUp({ content: 'There was an error while executing this command!', ephemeral: true });
-		} else {
-			// Otherwise Reply
-			await interaction.reply({ content: 'There was an error while executing this command!', ephemeral: true });
+		console.error(`Command error in /${interaction.commandName}:`, error);
+
+		const errorMessage = `Command failed: ${error.message || 'Unknown error'}`;
+
+		try {
+			if (interaction.replied || interaction.deferred) {
+				await interaction.followUp({
+					content: errorMessage,
+					ephemeral: true
+				});
+			} else {
+				await interaction.reply({
+					content: errorMessage,
+					ephemeral: true
+				});
+			}
+		} catch (replyError) {
+			console.error('Failed to send error response:', replyError);
 		}
 	}
 });
